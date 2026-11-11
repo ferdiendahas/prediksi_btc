@@ -2,7 +2,7 @@
 
 Kode percobaan skripsi: membandingkan **XGBoost, LightGBM, CatBoost, dan AdaBoost** untuk memprediksi harga BTC/IDR (Indodax) beberapa menit ke depan, dengan berbagai metode optimasi, rasio pembagian data, dan time frame.
 
-Daftar lengkap semua variabel percobaan ada di **`DAFTAR_PERCOBAAN.md`**.
+Daftar lengkap semua variabel percobaan ada di **`DAFTAR_PERCOBAAN.md`**. Perubahan versi v4 (revisi dosen 11-11-2026) ada di **`CHANGELOG.md`**.
 
 ---
 
@@ -21,10 +21,13 @@ prediksi_btc/
 │   ├── optim.py           <- metode optimasi (grid, random, TPE, CMA-ES, GA, ...)
 │   └── evaluate.py        <- metrik, uji Diebold-Mariano, seleksi fitur
 ├── data/
-│   ├── btcidr_candle_1menit.csv
-│   └── btcidr_ticker_5menit.csv
+│   └── btcidr_candle_1menit_<stamp>.csv   (candle 5 menit dibentuk dari file ini)
 └── hasil/                 <- dibuat otomatis
-    ├── hasil_semua.csv    <- satu baris per run (semua metrik)
+    ├── hasil_validasi.csv     <- skor validasi per run (dipakai memilih Tahap 1-2)
+    ├── hasil_uji_final.csv    <- metrik blok uji per run (dibuka setelah dikunci)
+    ├── deskripsi_data.csv     <- deskripsi data per (dataset, horizon)
+    ├── keputusan_terkunci.json<- pilihan Tahap 1-2 + hash validasi
+    ├── lingkungan.txt         <- Python, pip freeze, CPU, RAM, OS
     ├── params/            <- hyperparameter terbaik + daftar fitur per run
     ├── prediksi/          <- prediksi data uji per run
     └── ringkasan/         <- tabel dari ringkas.py
@@ -60,7 +63,7 @@ Kalau LightGBM error soal `libomp` di Mac: `brew install libomp`.
 
 Taruh CSV di folder `data/` dengan nama:
 - `btcidr_candle_1menit.csv` (kolom: waktu_utc, waktu_wib, open, high, low, close, volume)
-- `btcidr_ticker_5menit.csv` (kolom: waktu_utc, waktu_wib, last_price, buy, sell, high_24h, low_24h, vol_btc_24h, vol_idr_24h)
+- (ticker tidak dipakai lagi di v4)
 
 Ini format bawaan `indodax ekspor` dari collector. Kalau nama file berbeda, ubah `DATA` di `config.py`.
 
@@ -74,73 +77,58 @@ Ini format bawaan `indodax ekspor` dari collector. Kalau nama file berbeda, ubah
 python run.py
 ```
 
-### Mengganti variasi tanpa mengedit config (argumen menimpa config)
-
-```bash
-# hanya data 1 menit, horizon 5 dan 15 menit, metode TPE dan Random Search
-python run.py --datasets candle_1m --horizons 5 15 --optimizers tpe random
-
-# satu model, semua metode optimasi, 50 trial
-python run.py --models CatBoost --optimizers default grid random tpe cmaes ga qmc --trials 50
-
-# teknik tambahan: early stopping, seleksi 15 fitur, loss L1, pruning
-python run.py --early-stop --top-k 15 --loss l1 --pruner median
-
-# periode lain dan definisi harga lain
-python run.py --start "2026-10-10 00:00" --end "2026-10-16 23:59" --harga-candle close
-
-# beri label supaya mudah difilter saat meringkas
-python run.py --optimizers tpe --splits 0.8 --tag tahap1
-```
-
-Semua argumen:
+### Argumen
 
 | Argumen | Isi | Contoh |
 |---|---|---|
-| `--datasets` | `candle_1m`, `ticker_5m` | `--datasets candle_1m` |
+| `--datasets` | `candle_1m`, `candle_5m` | `--datasets candle_1m` |
 | `--horizons` | horizon dalam menit | `--horizons 5 15 30 60` |
-| `--splits` | porsi data latih | `--splits 0.8 0.7 0.6` |
+| `--train-fracs` | porsi akhir data pengembangan untuk melatih (bawaan 1.0) | `--train-fracs 1.0 0.75 0.5` |
 | `--models` | `XGBoost LightGBM CatBoost AdaBoost` | `--models XGBoost CatBoost` |
 | `--optimizers` | `default grid random tpe cmaes ga qmc` | `--optimizers tpe ga` |
 | `--trials` | jumlah trial tuning | `--trials 50` |
 | `--folds` | jumlah fold CV | `--folds 5` |
 | `--pruner` | `median`, `hyperband`, `none` | `--pruner median` |
 | `--early-stop` | aktifkan early stopping | `--early-stop` |
-| `--top-k` | seleksi K fitur teratas | `--top-k 15` |
+| `--top-k` | seleksi K fitur teratas (di dalam tiap fold) | `--top-k 15` |
 | `--loss` | `l1` atau `l2` | `--loss l1` |
 | `--harga-candle` | `typical`, `close`, `ohlc4` | `--harga-candle close` |
-| `--harga-ticker` | `mid`, `last` | `--harga-ticker last` |
 | `--start`, `--end` | periode data (UTC) | `--start "2026-10-14 00:00"` |
-| `--tag` | label bebas | `--tag tahap1` |
+| `--tag` | label tahap (`tahap1`, `tahap2`, `tahap3`, `tahap4_*`) | `--tag tahap1` |
 
-### Meringkas hasil
+### Pembagian data
 
-```bash
-python ringkas.py                                   # semua run
-python ringkas.py --tag tahap1                      # hanya run berlabel tahap1
-python ringkas.py --dataset candle_1m --split 80:20 --optimasi tpe
-python ringkas.py --metrik RMSE_vs_naive_pct        # bandingkan dengan RMSE
-```
+- **Blok uji final** = 20% bar terakhir (`FINAL_TEST_FRAC`), mulai waktu `t_u`. Sama untuk semua run dengan dataset dan horizon yang sama.
+- **Data pengembangan** = baris yang waktu targetnya (t + horizon) sebelum `t_u` (*purging* berbasis waktu).
+- Tuning memakai walk-forward CV 5 fold di data pengembangan. Di tiap fold, baris latih yang waktu targetnya tidak sebelum awal validasi dibuang.
+- Objektif tuning = **MAE harga (rupiah)** rata-rata fold. Skor pembanding Naive di fold yang sama ikut dicatat (`cv_vs_naive_pct`).
 
 ### Mengulang dari awal
 
-Hapus atau ganti nama folder `hasil/`. Selama file `hasil/hasil_semua.csv` masih ada, run dengan konfigurasi yang sama persis **dan `--tag` yang sama** akan dilewati. Konfigurasi sama tapi tag berbeda akan dijalankan lagi, supaya setiap tahap punya baris hasilnya sendiri.
+Hapus atau ganti nama folder `hasil/`. Selama `hasil/hasil_uji_final.csv` masih ada, run dengan konfigurasi sama persis **dan `--tag` sama** akan dilewati.
 
 ---
 
-## 4. Urutan percobaan yang disarankan
+## 4. Urutan percobaan (aturan v4)
 
-Full factorial ada 648 run (lihat `DAFTAR_PERCOBAAN.md`). Supaya hemat waktu dan alurnya jelas, jalankan bertahap. **Tetapkan urutan dan kriteria ini sebelum melihat hasil**, supaya pemilihan tidak terkesan mengikuti hasil yang paling enak dilihat.
+```bash
+python run.py --optimizers tpe --tag tahap1                       # 9 pasangan x 4 model
+python ringkas.py --tahap 1                                       # -> DS, H (dari validasi)
+python run.py --datasets <DS> --horizons <H> \
+  --optimizers default grid random tpe cmaes ga qmc --tag tahap2
+python ringkas.py --tahap 2                                       # -> OPT, tulis keputusan_terkunci.json
+python run.py --datasets <DS> --horizons <H> --optimizers <OPT> --train-fracs 1.0 0.75 0.5 --tag tahap3
+for t in "--early-stop" "--top-k 15" "--loss l1" "--pruner median"; do
+  python run.py --datasets <DS> --horizons <H> --optimizers <OPT> $t --tag "tahap4_$(echo $t | tr -d ' -')"
+done
+python ringkas.py --uji-final                                     # baru membuka hasil_uji_final.csv
+```
 
-| Tahap | Tujuan | Perintah |
-|---|---|---|
-| 1 | Cari **time frame** terbaik | `python run.py --optimizers tpe --splits 0.8 --tag tahap1` |
-| 2 | Bandingkan **metode optimasi** di time frame terbaik | `python run.py --horizons <H> --optimizers default grid random tpe cmaes ga qmc --splits 0.8 --tag tahap2` |
-| 3 | Uji **rasio split** | `python run.py --horizons <H> --optimizers <metode terbaik> --splits 0.8 0.7 0.6 --tag tahap3` |
-| 4 | Uji **teknik tambahan** | `python run.py --horizons <H> --optimizers <metode terbaik> --splits 0.8 --early-stop --tag tahap4a`, lalu `--top-k 15`, `--loss l1`, `--pruner median` |
-| 5 (opsional) | Full factorial | `python run.py --tag lengkap` |
-
-**Kriteria "terbaik" untuk setiap tahap:** MAE vs Naive (%) paling negatif dengan uji DM signifikan (p < 0,05). Kalau tidak ada yang signifikan, ambil yang paling dekat ke Naive dan laporkan apa adanya.
+- **Tahap 1:** pasangan (dataset, horizon) dengan `cv_vs_naive_pct` terkecil di antara 4 model. Seri → horizon lebih pendek → `candle_1m`.
+- **Tahap 2:** strategi dengan rata-rata `cv_vs_naive_pct` 4 model terkecil. `default` boleh terpilih. Seri → waktu tuning terpendek.
+- **Uji final:** koreksi Holm per tahap pada `p_MAE`. Status `lebih_baik` / `lebih_buruk` / `tidak_berbeda`.
+- `--early-stop` dan `--loss l1` tidak berlaku untuk AdaBoost (dicatat `status=tidak_berlaku`).
+- Log `run.py` hanya menampilkan skor validasi; metrik blok uji dibaca lewat `ringkas.py --uji-final`.
 
 ---
 
@@ -150,7 +138,7 @@ Diukur untuk data seminggu, 30 trial, 5 fold. Angka kasar, tergantung jumlah cor
 
 | Data | Per run XGBoost/LightGBM | Per run CatBoost | Per run AdaBoost | Grid (27 kombinasi) |
 |---|---|---|---|---|
-| `ticker_5m` (±2.000 baris) | < 1 menit | 1–2 menit | 1–3 menit | 1–5 menit |
+| `candle_5m` (±2.000 baris) | < 1 menit | 1–2 menit | 1–3 menit | 1–5 menit |
 | `candle_1m` (±10.000 baris) | 1–3 menit | 2–5 menit | 5–15 menit | 5–20 menit |
 
 Tahap 1 (9 dataset-horizon × 4 model × TPE) sekitar 1–3 jam. Full factorial bisa 1–2 hari, jadi jalankan di Mac yang dibiarkan menyala atau dicicil per tahap.
@@ -162,9 +150,10 @@ Tahap 1 (9 dataset-horizon × 4 model × TPE) sekitar 1–3 jam. Full factorial 
 1. **Target berupa return, bukan harga mentah.** Model pohon tidak bisa memprediksi di luar rentang data latih. Prediksi return lalu dikonversi ke rupiah: `harga_prediksi = harga_sekarang × exp(return_prediksi)`.
 2. **Tidak ada kebocoran data.**
    - Fitur hanya memakai data sampai waktu t.
-   - Tuning hanya di data latih dengan walk-forward CV (`TimeSeriesSplit`) dan jeda sebesar horizon.
-   - h bar terakhir data latih dibuang (*purging*) karena targetnya melewati batas uji.
-   - Data uji hanya dipakai sekali untuk laporan akhir.
+   - Tuning hanya di data pengembangan dengan walk-forward CV (`TimeSeriesSplit`) dan *purging* berbasis waktu di tiap fold.
+   - Baris yang waktu targetnya (t + horizon) masuk blok uji dibuang dari data pengembangan.
+   - Seleksi fitur top-k dihitung di dalam tiap fold, bukan di seluruh data.
+   - Pemilihan Tahap 1-2 hanya memakai skor validasi; blok uji dibuka setelah pilihan dikunci.
 3. **Naive wajib jadi pembanding.** Untuk horizon pendek, Naive (harga tetap) sangat sulit dikalahkan.
 4. **Time frame optimal dinilai dari keunggulan atas Naive (%),** bukan MAE rupiah, karena MAE pasti membesar untuk horizon lebih jauh.
 5. **Metode optimasi berbasis acak memakai seed yang sama.** Random, TPE, CMA-ES, dan GA mengawali dengan beberapa trial acak yang sama. Dengan trial sedikit (< 10), hasilnya bisa identik. Pakai minimal 30 trial supaya perbedaan metode terlihat.

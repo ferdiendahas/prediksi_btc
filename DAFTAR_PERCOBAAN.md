@@ -11,7 +11,9 @@ Semua pilihan di bawah diatur di `config.py` atau lewat argumen `run.py`.
 | Kode | Sumber | Resolusi | Kolom | Jumlah bar seminggu |
 |---|---|---|---|---|
 | `candle_1m` | Candle OHLCV Indodax | 1 menit | open, high, low, close, volume | ±10.080 |
-| `ticker_5m` | Snapshot ticker Indodax | 5 menit | last, bid, ask, high/low/volume 24 jam | ±2.016 |
+| `candle_5m` | Agregasi candle 1 menit (open pertama, high maks, low min, close terakhir, volume jumlah) | 5 menit | open, high, low, close, volume | ±2.016 |
+
+`ticker_5m` tidak dipakai lagi sejak revisi dosen 11-11-2026 (Indodax tidak menyediakan candle 5 menit, jadi candle 5 menit dibentuk dari candle 1 menit). Bar 5 menit yang datanya kurang dari 5 menit dicatat sebagai `n_parsial` di `hasil/deskripsi_data.csv`.
 
 **Periode:** 14 Oktober 2026 00:00 – 20 Oktober 2026 23:59 UTC (7 hari penuh). Bisa diganti di `START_UTC` dan `END_UTC`.
 
@@ -33,7 +35,7 @@ Semua pilihan di bawah diatur di `config.py` atau lewat argumen `run.py`.
 
 Horizon = berapa menit ke depan harga diprediksi.
 
-| Horizon | `candle_1m` | `ticker_5m` | Contoh pengguna |
+| Horizon | `candle_1m` | `candle_5m` | Contoh pengguna |
 |---|---|---|---|
 | 1 menit | ✅ | ✗ (bukan kelipatan 5) | Scalper sangat cepat |
 | 5 menit | ✅ | ✅ | Scalper |
@@ -47,16 +49,16 @@ Horizon lain (misal 10, 20, 45, 120) bisa ditambahkan di `HORIZONS`, asal kelipa
 
 ---
 
-## 3. Pembagian data (split)
+## 3. Pembagian data (berbasis waktu)
 
-| Kode | Latih | Uji |
-|---|---|---|
-| `0.8` | 80% | 20% |
-| `0.7` | 70% | 30% |
-| `0.6` | 60% | 40% |
+| Bagian | Isi |
+|---|---|
+| Blok uji final | 20% bar terakhir per (dataset, horizon), mulai waktu `t_u`. Tetap untuk semua run |
+| Data pengembangan | Baris dengan waktu target (t + horizon) < `t_u` |
+| Tahap 3 (`frac_latih`) | 1.0 / 0.75 / 0.5 = porsi **akhir** data pengembangan yang dipakai melatih. Blok uji tidak berubah |
 
-- Pembagian berurutan waktu: data latih selalu lebih awal dari data uji.
-- *Purging*: h bar terakhir data latih dibuang, karena targetnya memakai harga yang sudah masuk periode uji.
+- Pembagian berurutan waktu: data pengembangan selalu lebih awal dari blok uji.
+- *Purging* berbasis waktu, juga di tiap fold walk-forward CV.
 
 ---
 
@@ -110,7 +112,7 @@ Semua metode (kecuali `default`) memakai fungsi tujuan yang sama: **rata-rata MA
 
 ---
 
-## 6. Fitur (42 fitur untuk candle 1 menit, 32 fitur untuk ticker 5 menit)
+## 6. Fitur (42 fitur untuk candle 1 menit dan candle 5 menit)
 
 | Kelompok | Fitur | Data |
 |---|---|---|
@@ -129,7 +131,8 @@ Semua metode (kecuali `default`) memakai fungsi tujuan yang sama: **rata-rata MA
 | MAE (Rp) | Rata-rata selisih absolut prediksi dan harga aktual |
 | RMSE (Rp) | Seperti MAE, tetapi kesalahan besar dihukum lebih berat |
 | MAPE (%) | Rata-rata kesalahan dalam persen harga |
-| Akurasi arah (%) | Seberapa sering arah naik/turun tepat (bar tanpa perubahan harga tidak dihitung) |
+| Akurasi arah (%) | Seberapa sering arah naik/turun tepat. Bar dengan selisih harga < Rp1 tidak dihitung. Pembanding: `arah_baseline_pct` = tebak arah dengan sign(ret_lag1) |
+| Uji Holm | Koreksi uji berganda per tahap pada p_MAE (`ringkas.py --uji-final`) |
 | MAE/RMSE vs Naive (%) | Selisih terhadap Naive. **Negatif = lebih akurat dari Naive** |
 | Uji Diebold-Mariano | Apakah selisih dengan Naive signifikan (loss absolut dan kuadrat, koreksi HLN, autokovarians sampai lag h−1) |
 
@@ -142,8 +145,8 @@ Semua metode (kecuali `default`) memakai fungsi tujuan yang sama: **rata-rata MA
 | Variabel | Jumlah pilihan |
 |---|---|
 | Dataset | 2 |
-| Horizon | 5 (candle) + 4 (ticker) = 9 pasangan dataset-horizon |
-| Split | 3 |
+| Horizon | 5 (candle_1m) + 4 (candle_5m) = 9 pasangan dataset-horizon |
+| Panjang data latih (Tahap 3) | 3 |
 | Model | 4 |
 | Metode optimasi | 6 (+1 opsional `qmc`) |
 | **Total run (full factorial)** | 9 × 3 × 4 × 6 = **648 run** |

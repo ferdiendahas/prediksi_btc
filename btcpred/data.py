@@ -3,13 +3,67 @@ import numpy as np
 import pandas as pd
 
 
-def load(path, jenis, tf_menit, harga, start=None, end=None):
+def agregasi_5m(df1):
+    """df1: index waktu awal candle 1 menit (UTC), kolom open, high, low, close, volume.
+    Hasil: candle 5 menit, waktu = AWAL bar (UTC). n_menit < 5 = bar parsial."""
+    g = df1.resample("5min", label="left", closed="left", origin="epoch")
+    out = pd.DataFrame({
+        "open": g["open"].first(), "high": g["high"].max(),
+        "low": g["low"].min(), "close": g["close"].last(),
+        "volume": g["volume"].sum(min_count=1),
+        "n_menit": g["close"].count(),
+    })
+    out = out[out["n_menit"] > 0]
+    return out
+
+
+def _celah(idx, tf_menit, start, end):
+    """Statistik bar hilang pada grid TF di dalam [start, end]."""
+    s = pd.Timestamp(start).floor(f"{tf_menit}min") if start else idx.min()
+    e = pd.Timestamp(end).floor(f"{tf_menit}min") if end else idx.max()
+    grid = pd.date_range(s, e, freq=f"{tf_menit}min")
+    ada = grid.isin(idx)
+    hilang = ~ada
+    n_hilang = int(hilang.sum())
+    if n_hilang == 0:
+        return dict(n_bar_grid=len(grid), n_hilang=0, n_celah=0, celah_terpanjang_mnt=0)
+    blok = pd.Series(hilang).ne(pd.Series(hilang).shift()).cumsum()
+    panjang = pd.Series(hilang)[hilang].groupby(blok[hilang]).size()
+    return dict(n_bar_grid=len(grid), n_hilang=n_hilang, n_celah=int(len(panjang)),
+                celah_terpanjang_mnt=int(panjang.max() * tf_menit))
+
+
+def load(path, jenis, tf_menit, harga, start=None, end=None, sumber_tf=None):
     """Baca CSV, rapikan timestamp ke grid TF, isi kolom 'harga'.
     Bar yang hilang dibiarkan NaN (tidak diisi), supaya fitur/target yang
-    melewati gap otomatis terbuang."""
+    melewati gap otomatis terbuang.
+
+    sumber_tf=1 dengan tf_menit=5 (jenis candle): candle 5 menit dibentuk dari
+    candle 1 menit lewat agregasi_5m().
+
+    Mengembalikan (df, info). info memuat deskripsi data di dalam [start, end]:
+    tanggal awal/akhir, n_baris_mentah, n_bar, n_parsial, n_hilang, n_celah,
+    celah_terpanjang_mnt."""
     df = pd.read_csv(path)
-    df["waktu"] = pd.to_datetime(df["waktu_utc"]).dt.floor(f"{tf_menit}min")
+    agregasi = sumber_tf is not None and sumber_tf != tf_menit
+    floor_tf = sumber_tf if agregasi else tf_menit
+    df["waktu"] = pd.to_datetime(df["waktu_utc"]).dt.floor(f"{floor_tf}min")
     df = df.drop_duplicates("waktu").sort_values("waktu").set_index("waktu")
+
+    dalam = slice(start, end)
+    n_mentah = int(len(df.loc[dalam]))
+    if agregasi:
+        if jenis != "candle" or sumber_tf != 1 or tf_menit != 5:
+            raise ValueError("agregasi hanya didukung untuk candle 1 menit -> 5 menit")
+        df = agregasi_5m(df[["open", "high", "low", "close", "volume"]])
+    else:
+        df["n_menit"] = tf_menit if jenis == "candle" else np.nan
+
+    info = dict(tanggal_awal=str(df.loc[dalam].index.min()),
+                tanggal_akhir=str(df.loc[dalam].index.max()),
+                n_baris_mentah=n_mentah, n_bar=int(len(df.loc[dalam])),
+                n_parsial=int((df.loc[dalam, "n_menit"] < tf_menit).sum()) if jenis == "candle" else 0)
+    info.update(_celah(df.index, tf_menit, start, end))
 
     if jenis == "candle":
         if harga == "typical":
@@ -32,14 +86,13 @@ def load(path, jenis, tf_menit, harga, start=None, end=None):
         raise ValueError(jenis)
 
     full = pd.date_range(df.index.min(), df.index.max(), freq=f"{tf_menit}min")
-    n_gap = len(full) - len(df)
     df = df.reindex(full)
     if start or end:
         # ambil sedikit data sebelum START untuk pemanasan fitur (hanya data masa lalu)
         buf = pd.Timedelta(minutes=300)
         s = pd.Timestamp(start) - buf if start else None
         df = df.loc[s:end]
-    return df, n_gap
+    return df, info
 
 
 def build(df, jenis, tf_menit, horizon_menit, n_lag, windows_mnt, start=None):

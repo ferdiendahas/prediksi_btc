@@ -7,3 +7,4 @@ lightgbm>=4.0
 catboost>=1.2
 optuna>=3.6
 cmaes>=0.10
+statsmodels>=0.14
