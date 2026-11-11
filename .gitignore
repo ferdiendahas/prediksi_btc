@@ -1,0 +1,7 @@
+.venv/
+hasil/
+__pycache__/
+*.pyc
+.DS_Store
+data/*.csv
+!data/btcidr_candle_1menit_20261110_1642.csv
