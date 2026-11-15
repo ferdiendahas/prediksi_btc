@@ -132,7 +132,8 @@ Semua metode (kecuali `default`) memakai fungsi tujuan yang sama: **rata-rata MA
 | RMSE (Rp) | Seperti MAE, tetapi kesalahan besar dihukum lebih berat |
 | MAPE (%) | Rata-rata kesalahan dalam persen harga |
 | Akurasi arah (%) | Seberapa sering arah naik/turun tepat. Bar dengan selisih harga < Rp1 tidak dihitung. Pembanding: `arah_baseline_pct` = tebak arah dengan sign(ret_lag1) |
-| Uji Holm | Koreksi uji berganda per tahap pada p_MAE (`ringkas.py --uji-final`) |
+| Uji Holm | Koreksi uji berganda per keluarga (`ringkas.py --uji-final`): model-vs-Naive dikoreksi per tahap pada p_MAE, uji berpasangan antarkonfigurasi dikoreksi per keluarga sendiri |
+| Uji berpasangan (RM2) | Dua ramalan dari model yang sama pada blok uji final: strategi terpilih vs `default` (4 uji), data latih 75%/50% vs 100% (8 uji), tiap teknik Tahap 4 vs tanpa teknik (14 uji). Masing-masing satu keluarga Holm; keluaran `hasil/ringkasan/uji_berpasangan.csv` |
 | MAE/RMSE vs Naive (%) | Selisih terhadap Naive. **Negatif = lebih akurat dari Naive** |
 | Uji Diebold-Mariano | Apakah selisih dengan Naive signifikan (loss absolut dan kuadrat, koreksi HLN, autokovarians sampai lag h−1) |
 

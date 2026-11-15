@@ -9,13 +9,24 @@ Urutan pemakaian:
     python ringkas.py --uji-final          # baru membuka hasil_uji_final.csv (+ Holm)
 
 Aturan:
-  Tahap 1 : pasangan (dataset, horizon) dengan cv_vs_naive_pct terkecil di antara
-            4 model. Seri -> horizon lebih pendek -> candle_1m. Tanpa syarat signifikansi.
+  Tahap 1 : pasangan (dataset, horizon) dengan rata-rata cv_vs_naive_pct 4 model
+            terkecil, sama seperti aturan Tahap 2. Pasangan yang belum lengkap 4 model
+            dibuang. Seri -> horizon lebih pendek -> candle_1m. Tanpa syarat signifikansi.
   Tahap 2 : strategi dengan rata-rata cv_vs_naive_pct 4 model terkecil. 'default'
             boleh terpilih. Seri -> total waktu tuning terpendek.
-  Uji final: satu keluarga Holm = semua baris model-vs-Naive dalam satu tahap
+  Uji final: RM3 -> satu keluarga Holm = semua baris model-vs-Naive dalam satu tahap
             (tag tahap4_* digabung jadi satu keluarga 'tahap4'). Konfigurasi duplikat
             (run_id tanpa tag) dihitung sekali.
+            RM2 -> uji berpasangan antarkonfigurasi pada blok uji final, tiga
+            keluarga Holm terpisah (lihat uji_berpasangan): strategi terpilih vs
+            default, data latih 75%/50% vs 100%, dan tiap teknik Tahap 4 vs tanpa
+            teknik. Pembandingnya baris Tahap 2 dengan strategi terpilih, jadi
+            tidak perlu run tambahan.
+  Uji berpasangan: tiga keluarga Holm tersendiri, membandingkan dua ramalan dari
+            model yang sama pada blok uji final (DM loss absolut + HLN):
+            (1) strategi terpilih Tahap 2 vs default,
+            (2) data latih 75% dan 50% vs 100% (Tahap 3),
+            (3) setiap teknik Tahap 4 vs konfigurasi dasar tanpa teknik.
 """
 import argparse
 import hashlib
@@ -92,15 +103,20 @@ def pilih_tahap1(v, tag):
     n_model = t.groupby(["dataset", "horizon_menit"]).model.nunique()
     kurang = n_model[n_model < 4]
     if len(kurang):
-        print("PERINGATAN: pasangan berikut belum lengkap 4 model:\n", kurang.to_string())
+        print("PERINGATAN: pasangan berikut belum lengkap 4 model dan tidak ikut dipilih:\n",
+              kurang.to_string())
     pv = t.pivot_table(index=["dataset", "horizon_menit"], columns="model",
                        values="cv_vs_naive_pct", aggfunc="mean")
-    s = t.groupby(["dataset", "horizon_menit"]).cv_vs_naive_pct.min().rename("skor").reset_index()
+    s = t.groupby(["dataset", "horizon_menit"]).cv_vs_naive_pct.mean().rename("skor").reset_index()
+    s["n_model"] = s.set_index(["dataset", "horizon_menit"]).index.map(n_model)
+    s = s[s.n_model == 4].drop(columns="n_model")
+    if s.empty:
+        raise SystemExit("Tidak ada pasangan (dataset, horizon) yang lengkap 4 model.")
     s["urut_ds"] = s.dataset.map(URUT_DATASET).fillna(9)
     s = s.sort_values(["skor", "horizon_menit", "urut_ds"]).drop(columns="urut_ds")
     print(f"\n=== Tahap 1 (validasi, tag={tag}): cv_vs_naive_pct per model ===")
     print(pv.round(3).to_string())
-    print("\nSkor pasangan = cv_vs_naive_pct terkecil di antara model:")
+    print("\nSkor pasangan = rata-rata cv_vs_naive_pct 4 model:")
     print(s.round(3).to_string(index=False))
     best = s.iloc[0]
     print(f"\n-> Terpilih: dataset={best.dataset}, horizon={int(best.horizon_menit)} menit "
@@ -220,8 +236,160 @@ def sebaran(u):
     return u.merge(s, on="run_id", how="left")
 
 
+# ---------------------------------------------------------------------------
+# RM2: uji berpasangan perlakuan vs konfigurasi dasarnya (revisi 15-11-2026)
+#   keluarga 1 : strategi terpilih Tahap 2 vs 'default'
+#   keluarga 2 : data latih 75% dan 50% (Tahap 3) vs 100%
+#   keluarga 3 : tiap teknik tambahan (Tahap 4) vs tanpa teknik tersebut
+# Konfigurasi dasar ketiganya = baris Tahap 2 dengan strategi terpilih
+# (frac_latih 1.0, tanpa teknik tambahan), jadi tidak perlu run tambahan.
+# ---------------------------------------------------------------------------
+KOL_PERLAKUAN = ["frac_latih", "loss", "early_stop", "top_k", "pruner"]
+
+
+def baca_prediksi(run_id):
+    safe = str(run_id).replace("|", "__").replace(":", "-").replace(" ", "_")
+    d = pd.read_csv(OUT / "prediksi" / f"{safe}.csv", parse_dates=["waktu_target"])
+    return d.set_index("waktu_target")
+
+
+def dm_pasangan(a, b):
+    """DM loss absolut dan kuadrat antara dua ramalan pada blok uji final.
+    a = perlakuan, b = pembanding. DM < 0 berarti perlakuan lebih akurat."""
+    from btcpred import evaluate as E
+    pa, pb = baca_prediksi(a.run_id), baca_prediksi(b.run_id)
+    pa, pb = pa.align(pb, join="inner", axis=0)
+    ea, eb = pa.harga_aktual - pa.prediksi, pb.harga_aktual - pb.prediksi
+    hb, tf = int(a.horizon_bar), int(a.tf_data_menit)
+    dm1, p1 = E.dm_test(ea.abs() - eb.abs(), hb, tf)
+    dm2, p2 = E.dm_test(ea ** 2 - eb ** 2, hb, tf)
+    return dict(n=int(len(ea)), DM=dm1, p=p1, DM_L2=dm2, p_L2=p2)
+
+
+def label_perlakuan(a, b):
+    """Apa yang berbeda antara perlakuan dan pembandingnya."""
+    beda = [f"optimasi={a.optimasi}"] if str(a.optimasi) != str(b.optimasi) else []
+    beda += [f"{c}={a[c]}" for c in KOL_PERLAKUAN if str(a[c]) != str(b[c])]
+    return ";".join(beda) if beda else "(sama)"
+
+
+def pasangkan(a, b, nama):
+    """Satu baris uji berpasangan; None bila berkas prediksinya tidak ada."""
+    lab = label_perlakuan(a, b)
+    if lab == "(sama)":
+        return None
+    if (a.dataset, a.horizon_menit) != (b.dataset, b.horizon_menit):
+        print(f"  PERINGATAN: {a.run_id} dan pembandingnya beda dataset/horizon; dilewati.")
+        return None
+    try:
+        d = dm_pasangan(a, b)
+    except FileNotFoundError as e:
+        print(f"  lewati {a.model} {lab}: berkas prediksi tidak ada ({e.filename}); "
+              "pastikan C.SIMPAN_PREDIKSI = True saat run dijalankan.")
+        return None
+    return dict(keluarga=nama, model=a.model, perlakuan=lab,
+                MAE_perlakuan=a.MAE_Rp, MAE_dasar=b.MAE_Rp,
+                selisih_pct=(a.MAE_Rp / b.MAE_Rp - 1) * 100, **d,
+                run_perlakuan=a.run_id, run_dasar=b.run_id)
+
+
+def uji_keluarga(nama, baris, judul, n_harap=None):
+    """Holm dalam satu keluarga; DM < 0 dan p_holm < 0,05 -> perlakuan lebih baik."""
+    from statsmodels.stats.multitest import multipletests
+    r = pd.DataFrame([b for b in baris if b])
+    print(f"\n=== RM2: {judul} (keluarga Holm '{nama}') ===")
+    if r.empty:
+        print("  tidak ada pasangan yang bisa diuji.")
+        return r
+    # pasangan dengan ramalan identik (selisih loss selalu nol) tidak bisa diuji
+    # dan tidak ikut menghitung Holm.
+    bisa = r.p.notna()
+    r["p_holm"] = np.nan
+    r.loc[bisa, "p_holm"] = multipletests(r.loc[bisa, "p"].values, method="holm")[1]
+    sig = r.p_holm < 0.05
+    r["status"] = np.select([~bisa, (r.DM < 0) & sig, (r.DM > 0) & sig],
+                            ["ramalan_identik", "lebih_baik", "lebih_buruk"], "tidak_berbeda")
+    r["beda_arah_l2"] = bisa & (np.sign(r.DM_L2) != np.sign(r.DM))
+    print(f"  {int(bisa.sum())} uji dalam keluarga Holm ini"
+          + (f" ({int((~bisa).sum())} pasangan ramalannya identik, tidak diuji)"
+             if (~bisa).any() else ""))
+    print(r.drop(columns=["keluarga", "run_perlakuan", "run_dasar"]).round(4).to_string(index=False))
+    print("  status:", r.status.value_counts().to_dict())
+    if n_harap is not None and len(r) != n_harap:
+        print(f"  PERINGATAN: jumlah pasangan {len(r)}, seharusnya {n_harap} bila semua "
+              "run tersedia.")
+    if r.beda_arah_l2.any():
+        print("  catatan: ada uji yang arah loss kuadratnya berbeda; keputusan tetap "
+              "mengikuti loss absolut.")
+    return r
+
+
+def baris_dasar(u, k, opt):
+    """Baris konfigurasi dasar per model = Tahap 2 dengan strategi terpilih."""
+    t2 = u[(u.tag == k["tag_tahap2"]) & (u.optimasi == opt)]
+    d = {}
+    for m, g in t2.groupby("model"):
+        if len(g) > 1:
+            print(f"PERINGATAN: ada {len(g)} baris dasar untuk {m}; dipakai yang pertama.")
+        d[m] = g.iloc[0]
+    return d
+
+
+def uji_berpasangan(u_semua, k):
+    opt = k["tahap2"]["optimasi"]
+    u = u_semua[(u_semua.status == "ok") & (u_semua.model != "Naive")].copy()
+    dasar = baris_dasar(u, k, opt)
+    if not dasar:
+        print(f"\nRM2: tidak ada baris Tahap 2 dengan optimasi '{opt}'; uji berpasangan dilewati.")
+        return None
+    n_model = len(dasar)
+    print(f"\nKonfigurasi dasar RM2: tag={k['tag_tahap2']}, optimasi={opt}, "
+          f"{n_model} model, frac_latih 1.0, tanpa teknik tambahan")
+    out = []
+
+    # keluarga 1: strategi terpilih vs default
+    if opt == "default":
+        print("\nRM2 keluarga 1: strategi terpilih = default, uji vs default tidak dijalankan.")
+    else:
+        t2d = u[(u.tag == k["tag_tahap2"]) & (u.optimasi == "default")]
+        baris = [pasangkan(dasar[m], g.iloc[0], "tahap2_vs_default")
+                 for m, g in t2d.groupby("model") if m in dasar]
+        out.append(uji_keluarga("tahap2_vs_default", baris,
+                                f"strategi terpilih '{opt}' vs default", n_model))
+
+    # keluarga 2: panjang data latih
+    t3 = u[(u.tag.map(keluarga) == "tahap3") & (u.frac_latih < 1.0)]
+    baris = [pasangkan(r, dasar[r.model], "tahap3_vs_latih100")
+             for _, r in t3.iterrows() if r.model in dasar]
+    n3 = n_model * t3.frac_latih.nunique() if len(t3) else None
+    out.append(uji_keluarga("tahap3_vs_latih100", baris,
+                            "data latih sebagian vs 100%", n3))
+
+    # keluarga 3: teknik tambahan
+    t4 = u[u.tag.map(keluarga) == "tahap4"]
+    tb4 = u_semua[(u_semua.tag.map(keluarga) == "tahap4")
+                  & (u_semua.status == "tidak_berlaku")]
+    if len(tb4):
+        print(f"\nTahap 4: {len(tb4)} run tidak_berlaku (mis. AdaBoost dengan "
+              "--early-stop/--loss l1) tidak ikut diuji.")
+    baris = [pasangkan(r, dasar[r.model], "tahap4_vs_tanpa_teknik")
+             for _, r in t4.iterrows() if r.model in dasar]
+    out.append(uji_keluarga("tahap4_vs_tanpa_teknik", baris,
+                            "tiap teknik tambahan vs tanpa teknik", len(t4)))
+
+    r = [x for x in out if x is not None and not x.empty]
+    if not r:
+        return None
+    r = pd.concat(r, ignore_index=True)
+    (OUT / "ringkasan").mkdir(exist_ok=True)
+    f = OUT / "ringkasan" / "uji_berpasangan.csv"
+    r.to_csv(f, index=False)
+    print(f"\nTersimpan: {f}")
+    return r
+
+
 def uji_final(v):
-    cek_kunci(v)
+    k = cek_kunci(v)
     u = pd.read_csv(F_UJI).drop_duplicates("run_id", keep="last")
     h = sebaran(holm(u))
     kol = ["tahap", "tag", "dataset", "horizon_menit", "frac_latih", "model", "optimasi", "loss",
@@ -240,6 +408,7 @@ def uji_final(v):
     (OUT / "ringkasan").mkdir(exist_ok=True)
     h[kol + ["run_id"]].to_csv(OUT / "ringkasan" / "uji_final_holm.csv", index=False)
     print(f"\nTersimpan: {OUT / 'ringkasan' / 'uji_final_holm.csv'}")
+    uji_berpasangan(u, k)
 
 
 def main():

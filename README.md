@@ -124,9 +124,15 @@ done
 python ringkas.py --uji-final                                     # baru membuka hasil_uji_final.csv
 ```
 
-- **Tahap 1:** pasangan (dataset, horizon) dengan `cv_vs_naive_pct` terkecil di antara 4 model. Seri → horizon lebih pendek → `candle_1m`.
+- **Tahap 1:** pasangan (dataset, horizon) dengan rata-rata `cv_vs_naive_pct` 4 model terkecil (aturan sama seperti Tahap 2). Pasangan yang belum lengkap 4 model tidak dipilih. Seri → horizon lebih pendek → `candle_1m`.
 - **Tahap 2:** strategi dengan rata-rata `cv_vs_naive_pct` 4 model terkecil. `default` boleh terpilih. Seri → waktu tuning terpendek.
-- **Uji final:** koreksi Holm per tahap pada `p_MAE`. Status `lebih_baik` / `lebih_buruk` / `tidak_berbeda`.
+- **Uji final (RM3):** model vs Naive, koreksi Holm per tahap pada `p_MAE`. Status `lebih_baik` / `lebih_buruk` / `tidak_berbeda`.
+- **Uji final (RM2):** uji berpasangan antarkonfigurasi pada blok uji final (`hasil/ringkasan/uji_berpasangan.csv`), tiga keluarga Holm terpisah:
+  1. strategi terpilih Tahap 2 vs `default` (4 uji; dilewati bila yang terpilih memang `default`),
+  2. data latih 75% dan 50% vs 100% (8 uji),
+  3. tiap teknik Tahap 4 vs konfigurasi tanpa teknik itu (14 uji, karena 2 kombinasi AdaBoost `tidak_berlaku`).
+
+  Pembandingnya adalah baris Tahap 2 dengan strategi terpilih (`frac_latih` 1.0, tanpa teknik tambahan), jadi tidak perlu run tambahan — tetapi berkas `hasil/prediksi/*.csv` harus ada (`SIMPAN_PREDIKSI = True`). Pasangan yang ramalannya identik dicatat `ramalan_identik` dan tidak ikut menghitung Holm.
 - `--early-stop` dan `--loss l1` tidak berlaku untuk AdaBoost (dicatat `status=tidak_berlaku`).
 - Log `run.py` hanya menampilkan skor validasi; metrik blok uji dibaca lewat `ringkas.py --uji-final`.
 

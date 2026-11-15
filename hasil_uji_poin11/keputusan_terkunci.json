@@ -1,0 +1,18 @@
+{
+  "dibuat_utc": "2026-11-13T08:15:03+00:00",
+  "tag_tahap1": "tahap1",
+  "tag_tahap2": "tahap2",
+  "tahap1": {
+    "dataset": "candle_5m",
+    "horizon_menit": 5,
+    "skor_cv_vs_naive_pct": -0.08119227880117597
+  },
+  "tahap2": {
+    "optimasi": "tpe",
+    "rata2_cv_vs_naive_pct": -0.08119227880117597
+  },
+  "sha256_hasil_validasi": "bda93813abdc7137011e4232b9979c7427426f790b4cc2023d265695bf857314",
+  "sha256_baris_tahap1_2": "0aa25aad4b1662a511fb50f387fad0963f8756e10e590fb8dbd85ccfb1eb4946",
+  "n_baris_tahap1": 16,
+  "n_baris_tahap2": 8
+}

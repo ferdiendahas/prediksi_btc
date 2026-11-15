@@ -1,4 +1,4 @@
-# CHANGELOG — `prediksi_btc` v4 (revisi dari review dosen 11-11-2026)
+# CHANGELOG — `prediksi_btc` v4 (review dosen 11-11-2026, ditambah revisi bab 3 15-11-2026)
 
 Branch `revisi-dosen-v4`, dibuat dari commit `fc06845` (kode P2). Hasil lama (`hasil/`, P1 dan P2) tidak disentuh.
 Ruang pencarian, *seed* (42), jumlah *trial* (30; Grid 27), jumlah fold (5), model, dan fitur **tidak diubah**.
@@ -20,6 +20,9 @@ Ruang pencarian, *seed* (42), jumlah *trial* (30; Grid 27), jumlah fold (5), mod
 | 2026-11-12 | K10 | `run.py` | AdaBoost dengan `--early-stop` atau `--loss l1` tidak dijalankan; ditulis `status="tidak_berlaku"` tanpa metrik di kedua file | Teknik itu tidak berlaku untuk AdaBoost.R2 |
 | 2026-11-12 | K10 | `ringkas.py` | Rekap jumlah skenario dan konfigurasi unik per tahap (dicetak di setiap mode) | Laporan jumlah percobaan |
 | 2026-11-12 | dok | `README.md`, `DAFTAR_PERCOBAAN.md` | Disesuaikan dengan alur v4 | — |
+| 2026-11-15 | RM1 | `ringkas.py` | Skor pasangan Tahap 1 = **rata-rata** `cv_vs_naive_pct` 4 model (bukan nilai terkecil), aturan sama seperti Tahap 2; pasangan yang belum lengkap 4 model tidak ikut dipilih | Aturan pemilihan antartahap harus konsisten |
+| 2026-11-15 | RM2 | `ringkas.py` | `uji_berpasangan()`: uji DM berpasangan perlakuan vs konfigurasi dasarnya pada blok uji final, tiga keluarga Holm terpisah — (1) strategi terpilih vs `default` (4 uji), (2) `frac_latih` 0,75 dan 0,5 vs 1,0 (8 uji), (3) tiap teknik Tahap 4 vs tanpa teknik (14 uji). Pembanding = baris Tahap 2 dengan strategi terpilih, jadi tanpa run tambahan. Loss kuadrat dilaporkan sebagai `DM_L2`/`p_L2`/`beda_arah_l2` tanpa Holm; pasangan dengan ramalan identik dicatat `ramalan_identik` dan dikeluarkan dari Holm. Keluaran `hasil/ringkasan/uji_berpasangan.csv` | Pengaruh tiap perlakuan harus diuji terhadap konfigurasi tanpa perlakuan itu, bukan hanya terhadap Naive |
+| 2026-11-15 | dok | `README.md`, `DAFTAR_PERCOBAAN.md` | Aturan Tahap 1 dan tiga keluarga uji berpasangan RM2 | — |
 
 ## Yang sengaja belum dikerjakan (menunggu keputusan)
 - QMC 30 atau 32 trial.
