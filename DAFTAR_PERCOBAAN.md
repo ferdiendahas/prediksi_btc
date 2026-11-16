@@ -27,7 +27,21 @@ Semua pilihan di bawah diatur di `config.py` atau lewat argumen `run.py`.
 | ticker | `mid` (bawaan) | (bid + ask) / 2 |
 | ticker | `last` | Harga transaksi terakhir |
 
-> Kenapa bawaannya bukan `close`/`last`: harga transaksi terakhir meloncat-loncat antara harga bid dan ask (*bid-ask bounce*). Di data 1 menit, autokorelasi return `close` = −0,30, sedangkan `typical` = −0,13. Pola loncatan ini bisa "ditebak" model, tetapi bukan pergerakan harga yang sebenarnya dan tidak bisa dimanfaatkan trader karena terpotong spread. `close` dan `last` tetap bisa dipakai sebagai uji sensitivitas.
+> Kenapa bawaannya bukan `close`/`last`: harga transaksi terakhir meloncat-loncat antara harga bid dan ask (*bid-ask bounce*). Pola loncatan ini bisa "ditebak" model, tetapi bukan pergerakan harga yang sebenarnya dan tidak bisa dimanfaatkan trader karena terpotong spread. Autokorelasi lag-1 return pada data 10 Okt – 12 Nov 2026, dengan aturan bar bervolume nol sudah dipasang:
+>
+> | | `close` | `typical` |
+> |---|---|---|
+> | 1 menit | −0,35 | −0,25 |
+> | 5 menit | −0,25 | +0,13 |
+>
+> `close` dan `last` tetap bisa dipakai sebagai uji sensitivitas. Pembanding harga `close` dijalankan sebagai analisis pendukung sesudah Tahap 2:
+>
+> ```bash
+> python run.py --datasets <DS> --horizons <H> --optimizers <OPT> \
+>   --harga-candle close --tag pembanding_close
+> ```
+>
+> Tagnya tidak boleh diawali `tahapN`, karena keluarga Holm dibentuk dari awalan tag. Dengan tag `pembanding_close`, run ini masuk keluarga Holm sendiri dan tidak dipakai untuk memilih konfigurasi.
 
 ---
 

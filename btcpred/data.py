@@ -42,8 +42,8 @@ def load(path, jenis, tf_menit, harga, start=None, end=None, sumber_tf=None):
     candle 1 menit lewat agregasi_5m().
 
     Mengembalikan (df, info). info memuat deskripsi data di dalam [start, end]:
-    tanggal awal/akhir, n_baris_mentah, n_bar, n_parsial, n_hilang, n_celah,
-    celah_terpanjang_mnt."""
+    tanggal awal/akhir, n_baris_mentah, n_bar, n_parsial, n_volume_nol,
+    n_hilang, n_celah, celah_terpanjang_mnt."""
     df = pd.read_csv(path)
     agregasi = sumber_tf is not None and sumber_tf != tf_menit
     floor_tf = sumber_tf if agregasi else tf_menit
@@ -74,6 +74,12 @@ def load(path, jenis, tf_menit, harga, start=None, end=None, sumber_tf=None):
             df["harga"] = df["close"]
         else:
             raise ValueError(f"harga candle tidak dikenal: {harga}")
+        # Bar tanpa transaksi (volume 0): Indodax mengisi H=L=C dengan close bar
+        # sebelumnya, sehingga harga typical berubah padahal tidak ada transaksi.
+        # Harga dianggap tetap = harga bar sebelumnya (Bab III 3.4.2).
+        nol = df["volume"].eq(0)
+        df["harga"] = df["harga"].mask(nol).ffill().fillna(df["harga"])
+        info["n_volume_nol"] = int(nol.loc[dalam].sum())
     elif jenis == "ticker":
         df["mid"] = (df["buy"] + df["sell"]) / 2          # buy = bid, sell = ask
         if harga == "mid":

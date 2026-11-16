@@ -1,0 +1,113 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 43e5f3c..640d260 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -23,6 +23,9 @@ Ruang pencarian, *seed* (42), jumlah *trial* (30; Grid 27), jumlah fold (5), mod
+ | 2026-11-15 | RM1 | `ringkas.py` | Skor pasangan Tahap 1 = **rata-rata** `cv_vs_naive_pct` 4 model (bukan nilai terkecil), aturan sama seperti Tahap 2; pasangan yang belum lengkap 4 model tidak ikut dipilih | Aturan pemilihan antartahap harus konsisten |
+ | 2026-11-15 | RM2 | `ringkas.py` | `uji_berpasangan()`: uji DM berpasangan perlakuan vs konfigurasi dasarnya pada blok uji final, tiga keluarga Holm terpisah — (1) strategi terpilih vs `default` (4 uji), (2) `frac_latih` 0,75 dan 0,5 vs 1,0 (8 uji), (3) tiap teknik Tahap 4 vs tanpa teknik (14 uji). Pembanding = baris Tahap 2 dengan strategi terpilih, jadi tanpa run tambahan. Loss kuadrat dilaporkan sebagai `DM_L2`/`p_L2`/`beda_arah_l2` tanpa Holm; pasangan dengan ramalan identik dicatat `ramalan_identik` dan dikeluarkan dari Holm. Keluaran `hasil/ringkasan/uji_berpasangan.csv` | Pengaruh tiap perlakuan harus diuji terhadap konfigurasi tanpa perlakuan itu, bukan hanya terhadap Naive |
+ | 2026-11-15 | dok | `README.md`, `DAFTAR_PERCOBAAN.md` | Aturan Tahap 1 dan tiga keluarga uji berpasangan RM2 | — |
++| 2026-11-16 | audit 1.1 | `btcpred/data.py`, `run.py` | Bar candle bervolume nol: `harga` = harga bar sebelumnya (`ffill`, sebelum `reindex`, jadi bar hilang tetap NaN). Untuk `candle_5m` hanya bila kelima menit bervolume nol. Kolom `n_volume_nol` di `info`, log, dan `deskripsi_data.csv`. Fitur tetap dari OHLCV asli | Bab III 3.4.2: Indodax mengisi H=L=C bar tanpa transaksi dengan close sebelumnya, sehingga harga typical berubah tanpa transaksi (43% bar bervolume nol punya return ≠ 0 sebelum aturan ini) |
++| 2026-11-16 | audit 1.2 | `README.md`, `DAFTAR_PERCOBAAN.md` | Resep run pembanding harga close (`--harga-candle close --tag pembanding_close`); angka autokorelasi diperbarui | Bab III menjanjikan 4 run close dalam keluarga Holm tersendiri |
++| 2026-11-16 | audit 1.3 | `config.py` | `qmc` masuk `OPTIMIZERS` bawaan; komentar pengingat periode final di atas `START_UTC` | Bawaan harus sama dengan 7 strategi di Bab III |
+ 
+ ## Yang sengaja belum dikerjakan (menunggu keputusan)
+ - QMC 30 atau 32 trial.
+diff --git a/DAFTAR_PERCOBAAN.md b/DAFTAR_PERCOBAAN.md
+index 004efa2..1e6bafe 100644
+--- a/DAFTAR_PERCOBAAN.md
++++ b/DAFTAR_PERCOBAAN.md
+@@ -27,7 +27,7 @@ Semua pilihan di bawah diatur di `config.py` atau lewat argumen `run.py`.
+ | ticker | `mid` (bawaan) | (bid + ask) / 2 |
+ | ticker | `last` | Harga transaksi terakhir |
+ 
+-> Kenapa bawaannya bukan `close`/`last`: harga transaksi terakhir meloncat-loncat antara harga bid dan ask (*bid-ask bounce*). Di data 1 menit, autokorelasi return `close` = −0,30, sedangkan `typical` = −0,13. Pola loncatan ini bisa "ditebak" model, tetapi bukan pergerakan harga yang sebenarnya dan tidak bisa dimanfaatkan trader karena terpotong spread. `close` dan `last` tetap bisa dipakai sebagai uji sensitivitas.
++> Kenapa bawaannya bukan `close`/`last`: harga transaksi terakhir meloncat-loncat antara harga bid dan ask (*bid-ask bounce*). Autokorelasi lag-1 return pada data 10 Okt – 12 Nov 2026 (bar bervolume nol dianggap harga tetap): 1 menit `close` −0,35 dan `typical` −0,25; 5 menit `close` −0,25 dan `typical` +0,13. Tanda positif pada `typical` 5 menit menunjukkan perataan juga bisa menimbulkan autokorelasi semu (Working, 1960), jadi run pembanding `close` tetap dijalankan (tag `pembanding_close`, lihat README bagian 4). Pola loncatan ini bisa "ditebak" model, tetapi bukan pergerakan harga yang sebenarnya dan tidak bisa dimanfaatkan trader karena terpotong spread. `close` dan `last` tetap bisa dipakai sebagai uji sensitivitas.
+ 
+ ---
+ 
+diff --git a/README.md b/README.md
+index 67cb2d9..c316f37 100644
+--- a/README.md
++++ b/README.md
+@@ -121,6 +121,10 @@ python run.py --datasets <DS> --horizons <H> --optimizers <OPT> --train-fracs 1.
+ for t in "--early-stop" "--top-k 15" "--loss l1" "--pruner median"; do
+   python run.py --datasets <DS> --horizons <H> --optimizers <OPT> $t --tag "tahap4_$(echo $t | tr -d ' -')"
+ done
++# Pembanding harga close (Bab III 3.4.2): 4 model, konfigurasi Tahap 2 terpilih.
++# Tag TIDAK boleh diawali "tahapN" supaya jadi keluarga Holm tersendiri.
++python run.py --datasets <DS> --horizons <H> --optimizers <OPT> \
++  --harga-candle close --tag pembanding_close
+ python ringkas.py --uji-final                                     # baru membuka hasil_uji_final.csv
+ ```
+ 
+diff --git a/btcpred/data.py b/btcpred/data.py
+index 3171f19..a47aa81 100644
+--- a/btcpred/data.py
++++ b/btcpred/data.py
+@@ -43,7 +43,7 @@ def load(path, jenis, tf_menit, harga, start=None, end=None, sumber_tf=None):
+ 
+     Mengembalikan (df, info). info memuat deskripsi data di dalam [start, end]:
+     tanggal awal/akhir, n_baris_mentah, n_bar, n_parsial, n_hilang, n_celah,
+-    celah_terpanjang_mnt."""
++    celah_terpanjang_mnt, n_volume_nol (khusus candle)."""
+     df = pd.read_csv(path)
+     agregasi = sumber_tf is not None and sumber_tf != tf_menit
+     floor_tf = sumber_tf if agregasi else tf_menit
+@@ -74,6 +74,15 @@ def load(path, jenis, tf_menit, harga, start=None, end=None, sumber_tf=None):
+             df["harga"] = df["close"]
+         else:
+             raise ValueError(f"harga candle tidak dikenal: {harga}")
++        # Bar tanpa transaksi (volume 0): Indodax mengisi H=L=C dengan close bar
++        # sebelumnya, sehingga harga typical berubah padahal tidak ada transaksi.
++        # Harga dianggap tetap = harga bar sebelumnya (Bab III 3.4.2). Untuk
++        # candle_5m, volume = jumlah 5 menit, jadi aturan hanya berlaku bila
++        # kelima menitnya bervolume nol. Dijalankan sebelum reindex, sehingga
++        # bar yang hilang tetap NaN. Fitur tetap dihitung dari OHLCV asli.
++        nol = df["volume"].eq(0)
++        df["harga"] = df["harga"].mask(nol).ffill().fillna(df["harga"])
++        info["n_volume_nol"] = int(nol.loc[dalam].sum())
+     elif jenis == "ticker":
+         df["mid"] = (df["buy"] + df["sell"]) / 2          # buy = bid, sell = ask
+         if harga == "mid":
+diff --git a/config.py b/config.py
+index 441c19f..625bcd7 100644
+--- a/config.py
++++ b/config.py
+@@ -25,6 +25,7 @@ DATA = {
+ }
+ 
+ # Rentang data yang dipakai (UTC). Seminggu penuh = 7 x 24 jam.
++# FINAL: ganti ke 2026-10-10 00:00 - 2027-02-10 23:59 dan path CSV ekspor terbaru sebelum Tahap 1
+ START_UTC = "2026-10-14 00:00"
+ END_UTC   = "2026-10-20 23:59"
+ 
+@@ -60,7 +61,7 @@ MODELS     = ["XGBoost", "LightGBM", "CatBoost", "AdaBoost"]
+ #   cmaes   : CMA-ES (Evolution Strategy)
+ #   ga      : Genetic Algorithm (NSGA-II)
+ #   qmc     : Quasi-Monte Carlo (Sobol)
+-OPTIMIZERS = ["default", "grid", "random", "tpe", "cmaes", "ga"]
++OPTIMIZERS = ["default", "grid", "random", "tpe", "cmaes", "ga", "qmc"]
+ 
+ # ---------------------------------------------------------------------------
+ # 3. PENGATURAN OPTIMASI TAMBAHAN (berlaku untuk semua run)
+diff --git a/run.py b/run.py
+index f58b86e..d354793 100644
+--- a/run.py
++++ b/run.py
+@@ -80,7 +80,7 @@ KOLOM_UJI = ID + ["n_uji", "uji_mulai", "uji_akhir", "MAE_Rp", "RMSE_Rp", "MAPE_
+                   "DM_MAE", "p_MAE", "DM_RMSE", "p_RMSE", "std_pred_return"]
+ KOLOM_DESKRIPSI = ["dataset", "horizon_menit", "periode", "tanggal_awal", "tanggal_akhir",
+                    "n_baris_mentah", "n_bar", "n_bar_grid", "n_hilang", "n_celah",
+-                   "celah_terpanjang_mnt", "n_parsial", "n_setelah_fitur", "n_pengembangan",
++                   "celah_terpanjang_mnt", "n_parsial", "n_volume_nol", "n_setelah_fitur", "n_pengembangan",
+                    "n_uji_final", "t_u"]
+ 
+ 
+@@ -167,6 +167,7 @@ def main():
+         raw, dinfo = D.load(info["path"], jenis, tf, harga, cfg["START"], cfg["END"],
+                             sumber_tf=info.get("sumber_tf"))
+         print(f"\n=== {ds} | harga={harga} | n_bar={dinfo['n_bar']} | n_parsial={dinfo['n_parsial']}"
++              f" | n_volume_nol={dinfo.get('n_volume_nol', 0)}"
+               f" | n_hilang={dinfo['n_hilang']} (celah {dinfo['n_celah']}, terpanjang "
+               f"{dinfo['celah_terpanjang_mnt']} menit)")
+ 

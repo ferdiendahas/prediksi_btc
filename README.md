@@ -117,6 +117,8 @@ python ringkas.py --tahap 1                                       # -> DS, H (da
 python run.py --datasets <DS> --horizons <H> \
   --optimizers default grid random tpe cmaes ga qmc --tag tahap2
 python ringkas.py --tahap 2                                       # -> OPT, tulis keputusan_terkunci.json
+python run.py --datasets <DS> --horizons <H> --optimizers <OPT> \
+  --harga-candle close --tag pembanding_close                     # analisis pendukung harga close
 python run.py --datasets <DS> --horizons <H> --optimizers <OPT> --train-fracs 1.0 0.75 0.5 --tag tahap3
 for t in "--early-stop" "--top-k 15" "--loss l1" "--pruner median"; do
   python run.py --datasets <DS> --horizons <H> --optimizers <OPT> $t --tag "tahap4_$(echo $t | tr -d ' -')"
@@ -124,8 +126,8 @@ done
 python ringkas.py --uji-final                                     # baru membuka hasil_uji_final.csv
 ```
 
-- **Tahap 1:** pasangan (dataset, horizon) dengan rata-rata `cv_vs_naive_pct` 4 model terkecil (aturan sama seperti Tahap 2). Pasangan yang belum lengkap 4 model tidak dipilih. Seri → horizon lebih pendek → `candle_1m`.
-- **Tahap 2:** strategi dengan rata-rata `cv_vs_naive_pct` 4 model terkecil. `default` boleh terpilih. Seri → waktu tuning terpendek.
+- **Tahap 1:** pasangan (dataset, horizon) dengan median `cv_vs_naive_pct` 4 model (rata-rata dua nilai tengah) terkecil (aturan sama seperti Tahap 2). Pasangan yang belum lengkap 4 model tidak dipilih. Seri → horizon lebih pendek → `candle_1m`.
+- **Tahap 2:** strategi dengan median `cv_vs_naive_pct` 4 model (rata-rata dua nilai tengah) terkecil. `default` boleh terpilih. Strategi yang belum lengkap 4 model tidak dipilih. Seri → waktu tuning terpendek.
 - **Uji final (RM3):** model vs Naive, koreksi Holm per tahap pada `p_MAE`. Status `lebih_baik` / `lebih_buruk` / `tidak_berbeda`.
 - **Uji final (RM2):** uji berpasangan antarkonfigurasi pada blok uji final (`hasil/ringkasan/uji_berpasangan.csv`), tiga keluarga Holm terpisah:
   1. strategi terpilih Tahap 2 vs `default` (4 uji; dilewati bila yang terpilih memang `default`),
@@ -133,6 +135,7 @@ python ringkas.py --uji-final                                     # baru membuka
   3. tiap teknik Tahap 4 vs konfigurasi tanpa teknik itu (14 uji, karena 2 kombinasi AdaBoost `tidak_berlaku`).
 
   Pembandingnya adalah baris Tahap 2 dengan strategi terpilih (`frac_latih` 1.0, tanpa teknik tambahan), jadi tidak perlu run tambahan — tetapi berkas `hasil/prediksi/*.csv` harus ada (`SIMPAN_PREDIKSI = True`). Pasangan yang ramalannya identik dicatat `ramalan_identik` dan tidak ikut menghitung Holm.
+- **Pembanding harga `close`:** 4 run analisis pendukung (Bab III 3.4.2), dijalankan sesudah Tahap 2 dengan pasangan dan strategi terpilih. Tagnya **tidak boleh** diawali `tahapN`, karena keluarga Holm dibentuk dari awalan tag; dengan tag `pembanding_close` run ini masuk keluarga Holm sendiri dan tidak dipakai untuk memilih konfigurasi apa pun.
 - `--early-stop` dan `--loss l1` tidak berlaku untuk AdaBoost (dicatat `status=tidak_berlaku`).
 - Log `run.py` hanya menampilkan skor validasi; metrik blok uji dibaca lewat `ringkas.py --uji-final`.
 
