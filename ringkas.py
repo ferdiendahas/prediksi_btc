@@ -9,11 +9,13 @@ Urutan pemakaian:
     python ringkas.py --uji-final          # baru membuka hasil_uji_final.csv (+ Holm)
 
 Aturan:
-  Tahap 1 : pasangan (dataset, horizon) dengan rata-rata cv_vs_naive_pct 4 model
-            terkecil, sama seperti aturan Tahap 2. Pasangan yang belum lengkap 4 model
-            dibuang. Seri -> horizon lebih pendek -> candle_1m. Tanpa syarat signifikansi.
-  Tahap 2 : strategi dengan rata-rata cv_vs_naive_pct 4 model terkecil. 'default'
-            boleh terpilih. Seri -> total waktu tuning terpendek.
+  Tahap 1 : pasangan (dataset, horizon) dengan median cv_vs_naive_pct 4 model
+            (rata-rata dua nilai tengah) terkecil, sama seperti aturan Tahap 2.
+            Pasangan yang belum lengkap 4 model dibuang. Seri -> horizon lebih
+            pendek -> candle_1m. Tanpa syarat signifikansi.
+  Tahap 2 : strategi dengan median cv_vs_naive_pct 4 model terkecil; strategi yang
+            belum lengkap 4 model dibuang. 'default' boleh terpilih. Seri -> total
+            waktu tuning terpendek.
   Uji final: RM3 -> satu keluarga Holm = semua baris model-vs-Naive dalam satu tahap
             (tag tahap4_* digabung jadi satu keluarga 'tahap4'). Konfigurasi duplikat
             (run_id tanpa tag) dihitung sekali.
@@ -107,7 +109,8 @@ def pilih_tahap1(v, tag):
               kurang.to_string())
     pv = t.pivot_table(index=["dataset", "horizon_menit"], columns="model",
                        values="cv_vs_naive_pct", aggfunc="mean")
-    s = t.groupby(["dataset", "horizon_menit"]).cv_vs_naive_pct.mean().rename("skor").reset_index()
+    # Skor = median 4 model (rata-rata dua nilai tengah), Bab III Skenario Pengujian.
+    s = t.groupby(["dataset", "horizon_menit"]).cv_vs_naive_pct.median().rename("skor").reset_index()
     s["n_model"] = s.set_index(["dataset", "horizon_menit"]).index.map(n_model)
     s = s[s.n_model == 4].drop(columns="n_model")
     if s.empty:
@@ -116,7 +119,7 @@ def pilih_tahap1(v, tag):
     s = s.sort_values(["skor", "horizon_menit", "urut_ds"]).drop(columns="urut_ds")
     print(f"\n=== Tahap 1 (validasi, tag={tag}): cv_vs_naive_pct per model ===")
     print(pv.round(3).to_string())
-    print("\nSkor pasangan = rata-rata cv_vs_naive_pct 4 model:")
+    print("\nSkor pasangan = median cv_vs_naive_pct 4 model:")
     print(s.round(3).to_string(index=False))
     best = s.iloc[0]
     print(f"\n-> Terpilih: dataset={best.dataset}, horizon={int(best.horizon_menit)} menit "
@@ -133,24 +136,31 @@ def pilih_tahap2(v, tag):
         raise SystemExit(f"Tidak ada baris validasi dengan tag '{tag}'.")
     pv = t.pivot_table(index="optimasi", columns="model", values="cv_vs_naive_pct", aggfunc="mean")
     n_model = t.groupby("optimasi").model.nunique()
-    r = t.groupby("optimasi").agg(rata2=("cv_vs_naive_pct", "mean"),
+    # Skor = median 4 model (rata-rata dua nilai tengah), sama dengan Tahap 1.
+    r = t.groupby("optimasi").agg(skor=("cv_vs_naive_pct", "median"),
+                                  rata2=("cv_vs_naive_pct", "mean"),
                                   detik_tuning=("detik_tuning", "sum")).reset_index()
     r["n_model"] = r.optimasi.map(n_model)
-    r = r.sort_values(["rata2", "detik_tuning"])
+    kurang = r[r.n_model < 4]
+    if len(kurang):
+        print("PERINGATAN: strategi berikut belum lengkap 4 model dan tidak ikut dipilih:\n",
+              kurang.optimasi.to_string(index=False))
+    r = r[r.n_model == 4]
+    if r.empty:
+        raise SystemExit("Tidak ada strategi yang lengkap 4 model.")
+    r = r.sort_values(["skor", "detik_tuning"])
     print(f"\n=== Tahap 2 (validasi, tag={tag}): cv_vs_naive_pct per model ===")
     print(pv.round(3).to_string())
-    print("\nRata-rata 4 model (seri -> waktu tuning terpendek):")
+    print("\nSkor = median 4 model; rata2 hanya informasi (seri -> waktu tuning terpendek):")
     print(r.round(3).to_string(index=False))
     if "default" in pv.index:
         print("\nSelisih tiap strategi terhadap 'default' per model (poin persen; negatif = lebih baik):")
         print((pv - pv.loc["default"]).round(3).to_string())
-    if (r.n_model < 4).any():
-        print("PERINGATAN: ada strategi yang belum lengkap 4 model.")
     best = r.iloc[0]
-    print(f"\n-> Terpilih: optimasi={best.optimasi} (rata-rata {best.rata2:+.3f}%)")
+    print(f"\n-> Terpilih: optimasi={best.optimasi} (median {best.skor:+.3f}%)")
     (OUT / "ringkasan").mkdir(exist_ok=True)
     r.to_csv(OUT / "ringkasan" / "tahap2_validasi.csv", index=False)
-    return dict(optimasi=best.optimasi, rata2_cv_vs_naive_pct=float(best.rata2)), t
+    return dict(optimasi=best.optimasi, skor_cv_vs_naive_pct=float(best.skor)), t
 
 
 def kunci(v, tag1, tag2, paksa):

@@ -1,0 +1,23 @@
+diff --git a/ringkas.py b/ringkas.py
+index 7fb13ac..5c7ff36 100644
+--- a/ringkas.py
++++ b/ringkas.py
+@@ -9,11 +9,13 @@ Urutan pemakaian:
+     python ringkas.py --uji-final          # baru membuka hasil_uji_final.csv (+ Holm)
+ 
+ Aturan:
+-  Tahap 1 : pasangan (dataset, horizon) dengan rata-rata cv_vs_naive_pct 4 model
+-            terkecil, sama seperti aturan Tahap 2. Pasangan yang belum lengkap 4 model
+-            dibuang. Seri -> horizon lebih pendek -> candle_1m. Tanpa syarat signifikansi.
+-  Tahap 2 : strategi dengan rata-rata cv_vs_naive_pct 4 model terkecil. 'default'
+-            boleh terpilih. Seri -> total waktu tuning terpendek.
++  Tahap 1 : pasangan (dataset, horizon) dengan median cv_vs_naive_pct 4 model
++            (rata-rata dua nilai tengah) terkecil, sama seperti aturan Tahap 2.
++            Pasangan yang belum lengkap 4 model dibuang. Seri -> horizon lebih
++            pendek -> candle_1m. Tanpa syarat signifikansi.
++  Tahap 2 : strategi dengan median cv_vs_naive_pct 4 model terkecil; strategi yang
++            belum lengkap 4 model dibuang. 'default' boleh terpilih. Seri -> total
++            waktu tuning terpendek.
+   Uji final: RM3 -> satu keluarga Holm = semua baris model-vs-Naive dalam satu tahap
+             (tag tahap4_* digabung jadi satu keluarga 'tahap4'). Konfigurasi duplikat
+             (run_id tanpa tag) dihitung sekali.

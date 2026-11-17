@@ -25,6 +25,7 @@ DATA = {
 }
 
 # Rentang data yang dipakai (UTC). Seminggu penuh = 7 x 24 jam.
+# FINAL: ganti ke 2026-10-10 00:00 - 2027-02-10 23:59 dan path CSV ekspor terbaru sebelum Tahap 1
 START_UTC = "2026-10-14 00:00"
 END_UTC   = "2026-10-20 23:59"
 
@@ -60,7 +61,7 @@ MODELS     = ["XGBoost", "LightGBM", "CatBoost", "AdaBoost"]
 #   cmaes   : CMA-ES (Evolution Strategy)
 #   ga      : Genetic Algorithm (NSGA-II)
 #   qmc     : Quasi-Monte Carlo (Sobol)
-OPTIMIZERS = ["default", "grid", "random", "tpe", "cmaes", "ga"]
+OPTIMIZERS = ["default", "grid", "random", "tpe", "cmaes", "ga", "qmc"]
 
 # ---------------------------------------------------------------------------
 # 3. PENGATURAN OPTIMASI TAMBAHAN (berlaku untuk semua run)

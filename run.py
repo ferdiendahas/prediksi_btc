@@ -80,7 +80,8 @@ KOLOM_UJI = ID + ["n_uji", "uji_mulai", "uji_akhir", "MAE_Rp", "RMSE_Rp", "MAPE_
                   "DM_MAE", "p_MAE", "DM_RMSE", "p_RMSE", "std_pred_return"]
 KOLOM_DESKRIPSI = ["dataset", "horizon_menit", "periode", "tanggal_awal", "tanggal_akhir",
                    "n_baris_mentah", "n_bar", "n_bar_grid", "n_hilang", "n_celah",
-                   "celah_terpanjang_mnt", "n_parsial", "n_setelah_fitur", "n_pengembangan",
+                   "celah_terpanjang_mnt", "n_parsial", "n_volume_nol", "n_setelah_fitur",
+                   "n_pengembangan",
                    "n_uji_final", "t_u"]
 
 
@@ -167,6 +168,7 @@ def main():
         raw, dinfo = D.load(info["path"], jenis, tf, harga, cfg["START"], cfg["END"],
                             sumber_tf=info.get("sumber_tf"))
         print(f"\n=== {ds} | harga={harga} | n_bar={dinfo['n_bar']} | n_parsial={dinfo['n_parsial']}"
+              f" | n_volume_nol={dinfo.get('n_volume_nol', 0)}"
               f" | n_hilang={dinfo['n_hilang']} (celah {dinfo['n_celah']}, terpanjang "
               f"{dinfo['celah_terpanjang_mnt']} menit)")
 
