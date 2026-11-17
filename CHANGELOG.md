@@ -29,6 +29,7 @@ Ruang pencarian, *seed* (42), jumlah *trial* (30; Grid 27), jumlah fold (5), mod
 | 2026-11-16 | audit 1.1 | `DAFTAR_PERCOBAAN.md` | Autokorelasi lag-1 return diperbarui dengan aturan bar bervolume nol dan periode 10 Okt - 12 Nov 2026: 1 menit close −0,35 / typical −0,25; 5 menit close −0,25 / typical +0,13 (sebelumnya −0,30 / −0,13 tanpa tanggal) | Angka lama dihitung sebelum aturan volume nol dan tanpa menyebut periode |
 | 2026-11-15 | dok | `README.md`, `DAFTAR_PERCOBAAN.md` | Aturan Tahap 1 dan tiga keluarga uji berpasangan RM2 | — |
 | 2026-11-16 | median | `ringkas.py`, `README.md` | Skor Tahap 1 dan Tahap 2 memakai **median** `cv_vs_naive_pct` 4 model (rata-rata dua nilai tengah), bukan rata-rata; kolom `rata2` di `tahap2_validasi.csv` tinggal informasi. Strategi Tahap 2 yang belum lengkap 4 model dibuang (sebelumnya hanya diberi peringatan). Kunci JSON Tahap 2 berganti dari `rata2_cv_vs_naive_pct` menjadi `skor_cv_vs_naive_pct`, sama seperti Tahap 1 | Median tidak tergeser oleh satu model pencilan (mis. AdaBoost yang jauh lebih buruk daripada tiga model lain) |
+| 2026-11-17 | dok | `ringkas.py` | Docstring aturan Tahap 1–2 disamakan dengan kode (median). Logika tidak berubah | Docstring masih menulis "rata-rata" sesudah patch median |
 
 ## Yang sengaja belum dikerjakan (menunggu keputusan)
 - QMC 30 atau 32 trial.
